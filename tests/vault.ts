@@ -1,8 +1,9 @@
 /**
- * Simple Vault — тесты для Solana Devnet (неделя 8 + неделя 9)
+ * Simple Vault — тесты для Solana Devnet (недели 8, 9 и 10)
  *
  * Неделя 8: инициализация, карточки, created_at, пауза, закрытие карточки.
  * Неделя 9: депозит, расчёт share-токенов, учёт в vault и карточке.
+ * Неделя 10: вывод (burn shares + transfer токенов из vault), закрытие карточки после вывода.
  */
 
 import * as anchor from "@coral-xyz/anchor";
@@ -121,6 +122,22 @@ describe("simple_vault", () => {
       .accounts({
         vaultState: vaultStatePDA,
         userCard: cardPda(user.publicKey),
+        vaultTokenAccount: vaultTokenAccountPDA,
+        shareMint: shareMintPDA,
+        userTokenAccount: tokenAcc[user.publicKey.toBase58()],
+        userShareAccount: shareAcc[user.publicKey.toBase58()],
+        user: user.publicKey,
+      } as any)
+      .signers([user])
+      .rpc();
+
+  // Неделя 10: вывод. user подписывает сам; cardOwner нужен, чтобы попробовать чужую карточку.
+  const withdraw = (user: Keypair, shares: number, cardOwner: Keypair = user) =>
+    program.methods
+      .withdraw(new anchor.BN(shares))
+      .accounts({
+        vaultState: vaultStatePDA,
+        userCard: cardPda(cardOwner.publicKey),
         vaultTokenAccount: vaultTokenAccountPDA,
         shareMint: shareMintPDA,
         userTokenAccount: tokenAcc[user.publicKey.toBase58()],
@@ -393,5 +410,97 @@ describe("simple_vault", () => {
       shareAcc[userD.publicKey.toBase58()]
     );
     assert.equal(shares.amount, BigInt(30 * UNIT));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Неделя 10: вывод
+  // Перед этим блоком: в vault 180 токенов и 180 shares (A=100, B=50, D=30).
+  // Каждый пользователь стартовал с 1000 токенов.
+  // ---------------------------------------------------------------------------
+
+  it("withdraw: A возвращает 40 shares -> получает 40 токенов", async () => {
+    await withdraw(userA, 40 * UNIT);
+
+    const a = userA.publicKey.toBase58();
+    const tokens = await getAccount(provider.connection, tokenAcc[a]);
+    assert.equal(tokens.amount, BigInt(940 * UNIT)); // 1000 - 100 + 40
+
+    const shares = await getAccount(provider.connection, shareAcc[a]);
+    assert.equal(shares.amount, BigInt(60 * UNIT)); // 100 - 40 сожжено
+
+    const vault = await program.account.vaultState.fetch(vaultStatePDA);
+    assert.equal(vault.totalTokens.toNumber(), 140 * UNIT);
+    assert.equal(vault.totalShares.toNumber(), 140 * UNIT);
+
+    const vaultTokens = await getAccount(
+      provider.connection,
+      vaultTokenAccountPDA
+    );
+    assert.equal(vaultTokens.amount, BigInt(140 * UNIT));
+
+    const card = await program.account.userCard.fetch(cardPda(userA.publicKey));
+    assert.equal(card.shares.toNumber(), 60 * UNIT);
+    assert.equal(card.deposited.toNumber(), 60 * UNIT); // списано пропорционально
+  });
+
+  it("withdraw: 0 shares — ошибка", async () => {
+    await expectFailure(
+      () => withdraw(userA, 0),
+      "Нулевой вывод должен быть отклонён"
+    );
+  });
+
+  it("withdraw: больше, чем есть на карточке — ошибка", async () => {
+    await expectFailure(
+      () => withdraw(userA, 61 * UNIT), // у A осталось 60
+      "Нельзя вывести больше shares, чем есть"
+    );
+    const vault = await program.account.vaultState.fetch(vaultStatePDA);
+    assert.equal(vault.totalTokens.toNumber(), 140 * UNIT);
+  });
+
+  it("withdraw: чужую карточку подставить нельзя", async () => {
+    await expectFailure(
+      () => withdraw(userB, 10 * UNIT, userA),
+      "Пользователь B не должен выводить по карточке A"
+    );
+    const card = await program.account.userCard.fetch(cardPda(userA.publicKey));
+    assert.equal(card.shares.toNumber(), 60 * UNIT);
+  });
+
+  it("withdraw: на паузе вывод работает (деньги можно забрать всегда)", async () => {
+    await setPaused(true);
+    await withdraw(userB, 10 * UNIT);
+    await setPaused(false);
+
+    const tokens = await getAccount(
+      provider.connection,
+      tokenAcc[userB.publicKey.toBase58()]
+    );
+    assert.equal(tokens.amount, BigInt(960 * UNIT)); // 1000 - 50 + 10
+
+    const vault = await program.account.vaultState.fetch(vaultStatePDA);
+    assert.equal(vault.totalTokens.toNumber(), 130 * UNIT);
+    assert.equal(vault.totalShares.toNumber(), 130 * UNIT);
+  });
+
+  it("withdraw: D выводит всё -> карточка обнуляется и закрывается", async () => {
+    await withdraw(userD, 30 * UNIT);
+
+    const card = await program.account.userCard.fetch(cardPda(userD.publicKey));
+    assert.equal(card.shares.toNumber(), 0);
+    assert.equal(card.deposited.toNumber(), 0);
+
+    // Раньше закрыть карточку с депозитом было нельзя; теперь она пуста.
+    await closeCard(userD);
+    const account = await provider.connection.getAccountInfo(
+      cardPda(userD.publicKey),
+      "confirmed"
+    );
+    assert.isNull(account, "Пустая карточка должна закрыться");
+
+    const vault = await program.account.vaultState.fetch(vaultStatePDA);
+    assert.equal(vault.totalTokens.toNumber(), 100 * UNIT);
+    assert.equal(vault.totalShares.toNumber(), 100 * UNIT);
   });
 });

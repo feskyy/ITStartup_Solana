@@ -1,7 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, MintTo, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Burn, Mint, MintTo, Token, TokenAccount, Transfer};
 
-// Твой Program ID из недели 8 (не меняй, иначе не сможешь обновить программу в devnet).
 declare_id!("AQ1t23jJHzxzT1YR1n5ygPeamaEjg3kEYG7tyitDyapm");
 
 #[program]
@@ -60,7 +59,7 @@ pub mod simple_vault {
     /// Карточку может закрыть только её владелец.
     /// Закрытие разрешено даже во время паузы.
     /// Неделя 9: нельзя закрыть карточку, на которой есть депозит или shares
-    /// (иначе пропадёт учёт доли пользователя).
+    /// (иначе пропадёт учёт доли пользователя). Чтобы закрыть — сначала `withdraw` (неделя 10).
     pub fn close_user_card(ctx: Context<CloseUserCard>) -> Result<()> {
         msg!("User card closed by: {}", ctx.accounts.user.key());
 
@@ -168,6 +167,110 @@ pub mod simple_vault {
             "Deposit: {} tokens -> {} shares (total_tokens={}, total_shares={})",
             amount,
             shares,
+            vault.total_tokens,
+            vault.total_shares
+        );
+        Ok(())
+    }
+
+    /// Неделя 10: пользователь возвращает `shares` share-токенов и забирает свои токены.
+    ///
+    /// Формула (округление ВНИЗ, чтобы vault никогда не отдал больше положенного):
+    ///   tokens = shares * total_tokens / total_shares
+    ///
+    /// Два вызова Token Program (CPI):
+    ///   1) burn      — сжигаем shares пользователя, подписывает ПОЛЬЗОВАТЕЛЬ;
+    ///   2) transfer  — отдаём токены из хранилища, подписывает ПРОГРАММА от имени PDA vault.
+    ///
+    /// Решение: вывод разрешён и на паузе — пользователь всегда может забрать свои деньги.
+    pub fn withdraw(ctx: Context<Withdraw>, shares: u64) -> Result<()> {
+        require!(shares > 0, VaultError::ZeroAmount);
+
+        // Нельзя вывести больше shares, чем записано на карточке пользователя.
+        require!(
+            shares <= ctx.accounts.user_card.shares,
+            VaultError::InsufficientShares
+        );
+
+        let vault = &ctx.accounts.vault_state;
+        require!(vault.total_shares > 0, VaultError::MathOverflow);
+
+        // Шаг 1. Сколько токенов положено за эти shares.
+        let tokens = (shares as u128)
+            .checked_mul(vault.total_tokens as u128)
+            .and_then(|v| v.checked_div(vault.total_shares as u128))
+            .and_then(|v| u64::try_from(v).ok())
+            .ok_or(VaultError::MathOverflow)?;
+        require!(tokens > 0, VaultError::WithdrawTooSmall);
+
+        // Шаг 2. Сколько списать из поля `deposited` карточки — пропорционально выводу.
+        // Если выводим ВСЕ shares карточки, deposited обнулится точно, и карточку можно закрыть.
+        let deposited_part = (ctx.accounts.user_card.deposited as u128)
+            .checked_mul(shares as u128)
+            .and_then(|v| v.checked_div(ctx.accounts.user_card.shares as u128))
+            .and_then(|v| u64::try_from(v).ok())
+            .ok_or(VaultError::MathOverflow)?;
+
+        // Шаг 3. Сжигаем shares пользователя (подписывает пользователь).
+        token::burn(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Burn {
+                    mint: ctx.accounts.share_mint.to_account_info(),
+                    from: ctx.accounts.user_share_account.to_account_info(),
+                    authority: ctx.accounts.user.to_account_info(),
+                },
+            ),
+            shares,
+        )?;
+
+        // Шаг 4. Отдаём токены пользователю (подписывает PDA vault).
+        let token_mint_key = ctx.accounts.vault_state.token_mint;
+        let seeds = &[
+            b"vault".as_ref(),
+            token_mint_key.as_ref(),
+            &[ctx.accounts.vault_state.bump],
+        ];
+        let signer = &[&seeds[..]];
+
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.vault_token_account.to_account_info(),
+                    to: ctx.accounts.user_token_account.to_account_info(),
+                    authority: ctx.accounts.vault_state.to_account_info(),
+                },
+                signer,
+            ),
+            tokens,
+        )?;
+
+        // Шаг 5. Обновляем учёт: vault и карточка пользователя.
+        let vault = &mut ctx.accounts.vault_state;
+        vault.total_tokens = vault
+            .total_tokens
+            .checked_sub(tokens)
+            .ok_or(VaultError::MathOverflow)?;
+        vault.total_shares = vault
+            .total_shares
+            .checked_sub(shares)
+            .ok_or(VaultError::MathOverflow)?;
+
+        let card = &mut ctx.accounts.user_card;
+        card.shares = card
+            .shares
+            .checked_sub(shares)
+            .ok_or(VaultError::MathOverflow)?;
+        card.deposited = card
+            .deposited
+            .checked_sub(deposited_part)
+            .ok_or(VaultError::MathOverflow)?;
+
+        msg!(
+            "Withdraw: {} shares -> {} tokens (total_tokens={}, total_shares={})",
+            shares,
+            tokens,
             vault.total_tokens,
             vault.total_shares
         );
@@ -349,6 +452,64 @@ pub struct Deposit<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+#[derive(Accounts)]
+pub struct Withdraw<'info> {
+    #[account(
+        mut,
+        seeds = [b"vault", vault_state.token_mint.as_ref()],
+        bump = vault_state.bump,
+    )]
+    pub vault_state: Account<'info, VaultState>,
+
+    /// Карточка пользователя: seeds включают подпись user, поэтому чужую карточку не подставить.
+    #[account(
+        mut,
+        seeds = [b"user_card", vault_state.key().as_ref(), user.key().as_ref()],
+        bump = user_card.bump,
+    )]
+    pub user_card: Account<'info, UserCard>,
+
+    /// Токен-аккаунт vault — отсюда уходят токены.
+    #[account(
+        mut,
+        seeds = [b"vault_tokens", vault_state.token_mint.as_ref()],
+        bump,
+        token::mint = vault_state.token_mint,
+        token::authority = vault_state,
+    )]
+    pub vault_token_account: Account<'info, TokenAccount>,
+
+    /// Share mint — у него уменьшится supply при сжигании.
+    #[account(
+        mut,
+        seeds = [b"share_mint", vault_state.token_mint.as_ref()],
+        bump,
+        mint::authority = vault_state,
+    )]
+    pub share_mint: Account<'info, Mint>,
+
+    /// Токен-аккаунт пользователя (куда придут токены).
+    #[account(
+        mut,
+        token::mint = vault_state.token_mint,
+        token::authority = user,
+    )]
+    pub user_token_account: Account<'info, TokenAccount>,
+
+    /// Share-аккаунт пользователя (откуда сжигаем shares).
+    #[account(
+        mut,
+        token::mint = share_mint,
+        token::authority = user,
+    )]
+    pub user_share_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+}
+
 // -----------------------------------------------------------------------------
 // State
 // -----------------------------------------------------------------------------
@@ -428,4 +589,10 @@ pub enum VaultError {
 
     #[msg("User card still has deposited tokens or shares")]
     CardNotEmpty,
+
+    #[msg("Not enough shares on the user card")]
+    InsufficientShares,
+
+    #[msg("Shares amount is too small - withdrawal would give 0 tokens")]
+    WithdrawTooSmall,
 }
