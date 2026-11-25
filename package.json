@@ -4,11 +4,16 @@
   "scripts": {
     "build": "anchor build",
     "test": "anchor test --provider.cluster devnet --skip-local-validator --skip-deploy",
-    "deploy": "anchor deploy --provider.cluster devnet"
+    "deploy": "anchor deploy --provider.cluster devnet",
+    "week11:tokens": "tsx scripts/create-tokens.ts",
+    "week11:pool": "tsx scripts/create-clmm-pool.ts",
+    "week11:position": "tsx scripts/open-position.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",
-    "bn.js": "^5.2.3"
+    "@raydium-io/raydium-sdk-v2": "^0.2.87-alpha",
+    "bn.js": "^5.2.3",
+    "decimal.js": "^10.6.0"
   },
   "devDependencies": {
     "@solana/spl-token": "^0.4.9",
@@ -18,6 +23,7 @@
     "chai": "^4.3.10",
     "mocha": "^10.4.0",
     "ts-mocha": "^10.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.3.3"
   }
 }

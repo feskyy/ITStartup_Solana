@@ -7,6 +7,7 @@ Simple Vault — смарт-контракт для хранилища SPL-то�
 - Неделя 8 — каркас vault, карточки пользователей, пауза.
 - Неделя 9 — депозит и share-токены.
 - Неделя 10 — вывод из vault: сжигание share-токенов и возврат токенов через CPI.
+- Неделя 11 — свои тестовые токены и свой CLMM-пул Raydium в devnet (скриптами, контракт не менялся).
 
 ## 1. Инструкции контракта
 
@@ -100,7 +101,54 @@ Token Program (Inner Instructions), сделанные из программы S
 
 Транзакция вывода: https://explorer.solana.com/tx/3qkLB3QH96L4PU5jT3qkRuR1iGfYHq2jpjXNT66wQwCi3WA3Kf7N9wH4Er8EEkWgCBzJG9ZEKvs3tdrqF6Vdef57?cluster=devnet
 
-## 5. Запуск
+## 5. Свои токены и CLMM-пул Raydium (неделя 11)
+
+Контракт `simple_vault` на этой неделе **не менялся**. Нужно было подготовить площадку для недель 12–13: свои токены и свой пул с ликвидностью, в котором vault будет обменивать токены и открывать позиции. Всё сделано скриптами из папки `scripts/` (запуск через `tsx`, сеть devnet).
+
+| Шаг | Команда | Что делает |
+|---|---|---|
+| 1 | `yarn week11:tokens` | создаёт два тестовых токена (6 decimals) и выпускает по 1 000 000 каждого на кошелёк |
+| 2 | `yarn week11:pool` | создаёт CLMM-пул Raydium из этих токенов с начальной ценой 1 |
+| 3 | `yarn week11:position` | вручную, со своего кошелька, открывает одну позицию вокруг текущей цены |
+
+Файлы: `scripts/raydium-config.ts` (общие настройки и проверка, что RPC именно devnet), `scripts/create-tokens.ts`, `scripts/create-clmm-pool.ts`, `scripts/open-position.ts`. Все адреса сохранены в `week11-addresses.json` (только публичные адреса, ключей там нет). Версия `@raydium-io/raydium-sdk-v2` указана в `package.json`.
+
+### Адреса в devnet
+
+| Что | Адрес |
+|---|---|
+| Токен A | [`CCRTcoXihFnKNXepJk2eCA87qJNz8HWSgVMV19ctT1r`](https://explorer.solana.com/address/CCRTcoXihFnKNXepJk2eCA87qJNz8HWSgVMV19ctT1r?cluster=devnet) |
+| Токен B | [`A2dsMy371WJkZyuVBWUg9BscPz9SRcDG8f77C5YUDXX5`](https://explorer.solana.com/address/A2dsMy371WJkZyuVBWUg9BscPz9SRcDG8f77C5YUDXX5?cluster=devnet) |
+| Программа CLMM Raydium (devnet) | [`DRayAUgENGQBKVaX8owNhgzkEDyoHTGVEGHVJT1E9pfH`](https://explorer.solana.com/address/DRayAUgENGQBKVaX8owNhgzkEDyoHTGVEGHVJT1E9pfH?cluster=devnet) |
+| Конфиг комиссий (amm config) | [`CD4aJtX11cqTCAc83nxSPkkh5JW2yjD6uwHeovjqQ1qu`](https://explorer.solana.com/address/CD4aJtX11cqTCAc83nxSPkkh5JW2yjD6uwHeovjqQ1qu?cluster=devnet) |
+| **Пул** | [`4tAPx2mdfGQCWmx3EV4qCkbWK52PbzWVNFpxLkfs25nP`](https://explorer.solana.com/address/4tAPx2mdfGQCWmx3EV4qCkbWK52PbzWVNFpxLkfs25nP?cluster=devnet) |
+| **Позиция (NFT)** | [`FiiVsEg2qKrsFDiFdsAv6KFnbKnDE4vGCECbbtN7Jj6J`](https://explorer.solana.com/address/FiiVsEg2qKrsFDiFdsAv6KFnbKnDE4vGCECbbtN7Jj6J?cluster=devnet) |
+| Транзакция создания пула | [ссылка](https://explorer.solana.com/tx/szmL6EQM3DgZP83qZrSku2r5KnYVKUq6RNEx5xAq65uanvJSgUEAQiNeNYgdWjqD8G7TFLXhPsLAjpgbpd1mmpP?cluster=devnet) |
+| Транзакция открытия позиции | [ссылка](https://explorer.solana.com/tx/3AxxHDnrvK77R6NwCVCTmndDBX4HPwKEsyuJoP2ub69kcoiZUtVVPdESqZjiuMsSH1N4GQNhPVZdF7w5W5dnpCdk?cluster=devnet) |
+
+Кошелёк, с которого всё сделано: `mXNWnxD3gdAiWqsPFF1Zb9V4yZtJW1zMbr7FRgXRxJb` (devnet). NFT позиции лежит у него: тот, кто владеет NFT, владеет позицией.
+
+### Параметры пула и позиции
+
+- **Текущая цена пула:** 1 (1 токен A = 1 токен B), это начальная цена при создании пула. Открытие позиции внутри диапазона цену не двигает.
+- **Комиссия пула:** 0,25% с каждого обмена (`tradeFeeRate` 2500), шаг цены `tickSpacing` = 60.
+- **Выбранный диапазон:** от 0,9 до 1,1, то есть ±10% от текущей цены. После округления до шага тиков (кратных 60) реальные границы: тики −1080 … 960, то есть цена примерно 0,8976 … 1,1008.
+- **Внесено в позицию:** около 10 000 токенов первого токена пула (порядок токенов в пуле задаёт Raydium по сортировке адресов) и около 11 100–11 200 второго. Точные суммы видны в транзакции открытия позиции в Explorer.
+
+### Почему выбран именно такой диапазон
+
+Пара токенов у нас учебная, обе стороны стоят одинаково (цена 1), поэтому логично сделать диапазон симметричным вокруг текущей цены. Ширину ±10% я взял как «обычное колебание цены за период»: это правило из методички (отступить от цены вверх и вниз на обычное колебание, например 5–10%).
+
+Что это даёт и чем рискуем:
+
+- **Узкий диапазон зарабатывает больше.** В обычном пуле деньги размазаны по всем ценам от нуля до бесконечности, и почти все лежат без дела. Здесь те же деньги работают только рядом с текущей ценой, поэтому на каждый обмен в этом коридоре позиция получает большую долю комиссий.
+- **Но за это приходится следить.** Если цена выйдет за границы диапазона (ниже 0,8976 или выше 1,1008), позиция перестанет участвовать в обменах и не будет зарабатывать комиссии, пока цена не вернётся или диапазон не передвинут (это называется ребалансировка). Чем уже диапазон, тем чаще это случается.
+- **Соотношение токенов в позиции зависит от цены.** Пока цена внутри диапазона, в позиции есть оба токена. Если цена уйдёт выше верхней границы, позиция превратится целиком во второй токен, если ниже нижней, то целиком в первый.
+- **Почему не уже.** Шаг цены в пуле 60 тиков (около 0,6%), и очень узкий диапазон при учебных тестах слишком часто выходил бы из рабочей зоны. ±10% — разумный компромисс между доходом и вниманием.
+
+На неделях 12–13 vault будет делать то же самое сам: обменивать токены в нужной пропорции и открывать/закрывать такие позиции через CPI.
+
+## 6. Запуск
 
 ```bash
 yarn install
@@ -126,7 +174,7 @@ yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/vault.ts
 
 Структура аккаунтов изменилась по сравнению с неделей 8, поэтому старые vault и карточки с devnet не подходят. Тесты каждый раз создают новый mint, а значит, новый vault.
 
-## 6. Тесты (`tests/vault.ts`)
+## 7. Тесты (`tests/vault.ts`)
 
 1. `initialize_vault` — vault создан, `paused = false`, `total_tokens = 0`, `total_shares = 0`.
 2. `create_user_card` — карточки созданы, `created_at > 0`.
@@ -153,9 +201,8 @@ yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/vault.ts
 23. На паузе вывод работает.
 24. D выводит всё: карточка обнуляется и закрывается.
 
-**Результат запуска (devnet):** недели 8–9: 18 passing (получено ранее). Недели 8–10 (24 теста): _запустить `yarn test` и вписать фактический результат_.
 
-## 7. Адреса и ссылки
+## 8. Адреса и ссылки
 
 - Сеть: Solana Devnet
 - Program ID: `AQ1t23jJHzxzT1YR1n5ygPeamaEjg3kEYG7tyitDyapm`
@@ -169,7 +216,7 @@ yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/vault.ts
 - Программы, которые участвуют в транзакции депозита: Simple Vault (`AQ1t23jJHzxzT1YR1n5ygPeamaEjg3kEYG7tyitDyapm`) вызывает Token Program (`transfer` — перевод токенов пользователя в vault, `mint_to` — выпуск share-токенов). 
 - Программы, которые участвуют в транзакции депозита: Simple Vault (`AQ1t23jJHzxzT1YR1n5ygPeamaEjg3kEYG7tyitDyapm`) вызывает Token Program (`transfer` — перевод токенов пользователя в vault, `mint_to` — выпуск share-токенов).
 
-## 8. Безопасность
+## 9. Безопасность
 
 - Токены vault лежат на PDA, у которого нет приватного ключа: ни администратор, ни кто-то другой не может забрать их своей подписью.
 - Share-токены выпускает только программа (mint authority — PDA vault).
@@ -179,7 +226,7 @@ yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/vault.ts
 - Арифметика через `checked_*` и `u128`, чтобы не было переполнения.
 - Не публиковать в GitHub: `id.json`, `*-keypair.json`, seed-фразы.
 
-## 9. Частые ошибки
+## 10. Частые ошибки
 
 | Ошибка | Причина | Решение |
 |---|---|---|
