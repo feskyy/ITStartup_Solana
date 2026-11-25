@@ -7,7 +7,9 @@
     "deploy": "anchor deploy --provider.cluster devnet",
     "week11:tokens": "tsx scripts/create-tokens.ts",
     "week11:pool": "tsx scripts/create-clmm-pool.ts",
-    "week11:position": "tsx scripts/open-position.ts"
+    "week11:position": "tsx scripts/open-position.ts",
+    "week12": "tsx scripts/week12.ts",
+    "week12:report": "node scripts/week12-report.cjs"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",

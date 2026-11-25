@@ -1,11 +1,22 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Burn, Mint, MintTo, Token, TokenAccount, Transfer};
 
+mod raydium_swap;
+use raydium_swap::*;
+
 declare_id!("AQ1t23jJHzxzT1YR1n5ygPeamaEjg3kEYG7tyitDyapm");
 
 #[program]
 pub mod simple_vault {
     use super::*;
+
+    pub fn initialize_strategy(ctx: Context<InitializeStrategy>) -> Result<()> {
+        raydium_swap::initialize(ctx)
+    }
+
+    pub fn swap<'info>(ctx: Context<'_, '_, '_, 'info, SwapVault<'info>>, amount_in: u64, minimum_amount_out: u64, a_to_b: bool) -> Result<()> {
+        raydium_swap::execute(ctx, amount_in, minimum_amount_out, a_to_b)
+    }
 
     /// Создать vault для конкретного SPL-токена.
     /// Создаёт VaultState PDA, vault_token_account PDA, share_mint PDA.
@@ -85,6 +96,7 @@ pub mod simple_vault {
     ///   Первый депозит:       shares = amount (1:1)
     ///   Последующие депозиты: shares = amount * total_shares / total_tokens
     pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
+        require!(ctx.accounts.vault_state.total_tokens != STRATEGY_LOCK, VaultError::StrategyLocked);
         require!(amount > 0, VaultError::ZeroAmount);
 
         // Во время паузы депозиты запрещены.
@@ -96,7 +108,8 @@ pub mod simple_vault {
         let vault = &ctx.accounts.vault_state;
 
         // Шаг 1. Сколько shares положено пользователю.
-        let shares = if vault.total_shares == 0 || vault.total_tokens == 0 {
+        require!(vault.total_shares == 0 || vault.total_tokens > 0, VaultError::InvalidStrategy);
+        let shares = if vault.total_shares == 0 {
             amount // первый депозит: 1 share = 1 token
         } else {
             (amount as u128)
@@ -184,6 +197,7 @@ pub mod simple_vault {
     ///
     /// Решение: вывод разрешён и на паузе — пользователь всегда может забрать свои деньги.
     pub fn withdraw(ctx: Context<Withdraw>, shares: u64) -> Result<()> {
+        require!(ctx.accounts.vault_state.total_tokens != STRATEGY_LOCK, VaultError::StrategyLocked);
         require!(shares > 0, VaultError::ZeroAmount);
 
         // Нельзя вывести больше shares, чем записано на карточке пользователя.
@@ -595,4 +609,10 @@ pub enum VaultError {
 
     #[msg("Shares amount is too small - withdrawal would give 0 tokens")]
     WithdrawTooSmall,
+    #[msg("Strategy active: convert B back to A before deposit or withdrawal")]
+    StrategyLocked,
+    #[msg("Invalid Raydium accounts or strategy state")]
+    InvalidStrategy,
+    #[msg("Swap output below specified minimum or input not fully spent")]
+    InvalidSwapResult,
 }

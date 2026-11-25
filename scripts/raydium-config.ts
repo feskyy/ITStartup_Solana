@@ -62,8 +62,11 @@ let raydium: Raydium | undefined;
 export const initSdk = async () => {
   if (raydium) return raydium;
   raydium = await Raydium.load({
-    owner,
-    connection,
+    owner: owner as unknown as NonNullable<
+      Parameters<typeof Raydium.load>[0]["owner"]
+    >,
+    connection: connection as unknown as
+      Parameters<typeof Raydium.load>[0]["connection"],
     cluster: "devnet",
     disableFeatureCheck: true,
     disableLoadToken: false,
