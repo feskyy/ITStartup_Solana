@@ -4,17 +4,118 @@ use anchor_spl::token::{self, Burn, Mint, MintTo, Token, TokenAccount, Transfer}
 mod raydium_swap;
 use raydium_swap::*;
 
-declare_id!("AQ1t23jJHzxzT1YR1n5ygPeamaEjg3kEYG7tyitDyapm");
+mod raydium_position;
+use raydium_position::OpenPositionArgs;
 
+declare_id!("AQ1t23jJHzxzT1YR1n5ygPeamaEjg3kEYG7tyitDyapm");
 #[program]
 pub mod simple_vault {
     use super::*;
+
+    pub fn open_position<'info>(ctx: Context<'_, '_, '_, 'info, PositionAction<'info>>, args: OpenPositionArgs) -> Result<()> {
+        let a = ctx.accounts;
+        require!(!a.strategy_state.in_market, VaultError::PositionAlreadyOpen);
+        require!(!a.strategy_state.needs_sync, VaultError::InvalidStrategy);
+        require!(a.vault_state.total_shares > 0 && !a.vault_state.paused, VaultError::InvalidStrategy);
+        let r = ctx.remaining_accounts;
+        require!(r.len() == 22 || r.len() == 23, VaultError::InvalidStrategy);
+        require_keys_eq!(r[0].key(), a.admin.key(), VaultError::Unauthorized);
+        require_keys_eq!(r[1].key(), a.vault_state.key(), VaultError::InvalidStrategy);
+        let (first, second) = position_vault_order(a, &r[10], &r[11])?;
+        require_keys_eq!(r[20].key(), first.mint, VaultError::InvalidStrategy);
+        require_keys_eq!(r[21].key(), second.mint, VaultError::InvalidStrategy);
+        require_keys_eq!(r[16].key(), a.token_program.key(), VaultError::InvalidStrategy);
+        require!(args.amount_max_a > 0 && args.amount_max_b > 0 && args.amount_max_a <= first.amount && args.amount_max_b <= second.amount, VaultError::InvalidStrategy);
+        let nft = r[2].key();
+        let personal = Pubkey::find_program_address(&[b"position", nft.as_ref()], &raydium_position::RAYDIUM_CLMM).0;
+        require_keys_eq!(r[9].key(), personal, VaultError::InvalidStrategy);
+        let mint = a.vault_state.token_mint;
+        let bump = [a.vault_state.bump];
+        let seeds: &[&[u8]] = &[b"vault", mint.as_ref(), &bump];
+        let signer = &[seeds];
+        // Временное разрешение payer списать только заданный максимум.
+        for (account, amount) in [(first, args.amount_max_a), (second, args.amount_max_b)] {
+            token::approve(CpiContext::new_with_signer(a.token_program.to_account_info(), token::Approve {
+                to: account.to_account_info(), delegate: a.admin.to_account_info(), authority: a.vault_state.to_account_info(),
+            }, signer), amount)?;
+        }
+        raydium_position::open_position_cpi(&a.clmm_program.to_account_info(), r, &args, signer)?;
+        for account in [first, second] {
+            token::revoke(CpiContext::new_with_signer(a.token_program.to_account_info(), token::Revoke {
+                source: account.to_account_info(), authority: a.vault_state.to_account_info(),
+            }, signer))?;
+        }
+        check_position_nft(&r[3], a.vault_state.key(), nft)?;
+        require!(position_liquidity(&r[9], nft)? > 0, VaultError::InvalidStrategy);
+        a.strategy_state.in_market = true;
+        a.strategy_state.needs_sync = true;
+        a.strategy_state.position_nft_mint = nft;
+        a.strategy_state.personal_position = personal;
+        a.strategy_state.tick_lower = args.tick_lower;
+        a.strategy_state.tick_upper = args.tick_upper;
+        a.vault_state.total_tokens = STRATEGY_LOCK;
+        Ok(())
+    }
+
+    pub fn collect_fees<'info>(ctx: Context<'_, '_, '_, 'info, PositionAction<'info>>) -> Result<()> {
+        decrease_position_checked(ctx.accounts, ctx.remaining_accounts, false, 0, 0)
+    }
+
+    pub fn close_position<'info>(ctx: Context<'_, '_, '_, 'info, PositionAction<'info>>, min_a: u64, min_b: u64) -> Result<()> {
+        let a = ctx.accounts;
+        require!(min_a > 0 || min_b > 0, VaultError::ZeroAmount);
+        decrease_position_checked(a, ctx.remaining_accounts, true, min_a, min_b)?;
+        let r = ctx.remaining_accounts;
+        // NFT mint и System Program передаются последними двумя аккаунтами.
+        let n = r.len();
+        require_keys_eq!(r[n-2].key(), a.strategy_state.position_nft_mint, VaultError::InvalidStrategy);
+        require_keys_eq!(r[n-1].key(), anchor_lang::system_program::ID, VaultError::InvalidStrategy);
+        let mint = a.vault_state.token_mint;
+        let bump = [a.vault_state.bump];
+        let seeds: &[&[u8]] = &[b"vault", mint.as_ref(), &bump];
+        let accounts = [a.vault_state.to_account_info(), r[n-2].clone(), r[1].clone(), r[2].clone(), r[n-1].clone(), a.token_program.to_account_info()];
+        raydium_position::close_position_cpi(&a.clmm_program.to_account_info(), &accounts, &[seeds])?;
+        a.strategy_state.in_market = false;
+        a.strategy_state.position_nft_mint = Pubkey::default();
+        a.strategy_state.personal_position = Pubkey::default();
+        a.strategy_state.tick_lower = 0;
+        a.strategy_state.tick_upper = 0;
+        Ok(())
+    }
+
+    pub fn sync_vault(ctx: Context<PositionAction>) -> Result<()> {
+        let a = ctx.accounts;
+        require!(!a.strategy_state.in_market && a.strategy_state.needs_sync && a.vault_b.amount == 0, VaultError::InvalidStrategy);
+        a.vault_state.total_tokens = a.vault_a.amount;
+        a.strategy_state.needs_sync = false;
+        Ok(())
+    }
+
+    /// Неделя 13: инициализация состояния LP-стратегии.
+    pub fn initialize_position_strategy(
+        ctx: Context<InitializePositionStrategy>,
+    ) -> Result<()> {
+        let strategy = &mut ctx.accounts.strategy_state;
+        strategy.vault = ctx.accounts.vault_state.key();
+        strategy.in_market = false;
+        strategy.needs_sync = false;
+        strategy.position_nft_mint = Pubkey::default();
+        strategy.personal_position = Pubkey::default();
+        strategy.tick_lower = 0;
+        strategy.tick_upper = 0;
+        strategy.bump = ctx.bumps.strategy_state;
+        msg!("Position strategy initialized");
+        msg!("Vault: {}", strategy.vault);
+        Ok(())
+    }
+
 
     pub fn initialize_strategy(ctx: Context<InitializeStrategy>) -> Result<()> {
         raydium_swap::initialize(ctx)
     }
 
     pub fn swap<'info>(ctx: Context<'_, '_, '_, 'info, SwapVault<'info>>, amount_in: u64, minimum_amount_out: u64, a_to_b: bool) -> Result<()> {
+        require!(!ctx.accounts.strategy_state.in_market, VaultError::StrategyLocked);
         raydium_swap::execute(ctx, amount_in, minimum_amount_out, a_to_b)
     }
 
@@ -297,6 +398,95 @@ pub mod simple_vault {
 // -----------------------------------------------------------------------------
 
 #[derive(Accounts)]
+pub struct PositionAction<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    #[account(mut, seeds=[b"vault", vault_state.token_mint.as_ref()], bump=vault_state.bump,
+        has_one=admin, constraint=vault_state.token_mint == anchor_lang::solana_program::pubkey!("CCRTcoXihFnKNXepJk2eCA87qJNz8HWSgVMV19ctT1r") @ VaultError::InvalidStrategy)]
+    pub vault_state: Account<'info, VaultState>,
+    #[account(mut, seeds=[b"position_strategy", vault_state.key().as_ref()], bump=strategy_state.bump,
+        constraint=strategy_state.vault == vault_state.key() @ VaultError::InvalidStrategy)]
+    pub strategy_state: Account<'info, StrategyState>,
+    #[account(mut, address=vault_state.vault_token_account, token::authority=vault_state,
+        constraint=vault_a.mint == vault_state.token_mint @ VaultError::InvalidStrategy)]
+    pub vault_a: Account<'info, TokenAccount>,
+    #[account(mut, seeds=[b"vault_tokens_b", vault_state.key().as_ref()], bump, token::authority=vault_state,
+        constraint=vault_b.mint == anchor_lang::solana_program::pubkey!("A2dsMy371WJkZyuVBWUg9BscPz9SRcDG8f77C5YUDXX5") @ VaultError::InvalidStrategy)]
+    pub vault_b: Account<'info, TokenAccount>,
+    /// CHECK: pinned executable Raydium program.
+    #[account(address=raydium_position::RAYDIUM_CLMM, executable)]
+    pub clmm_program: UncheckedAccount<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
+fn position_vault_order<'a, 'info>(a: &'a PositionAction<'info>, first: &AccountInfo<'info>, second: &AccountInfo<'info>) -> Result<(&'a Account<'info, TokenAccount>, &'a Account<'info, TokenAccount>)> {
+    if first.key() == a.vault_a.key() && second.key() == a.vault_b.key() { Ok((&a.vault_a, &a.vault_b)) }
+    else if first.key() == a.vault_b.key() && second.key() == a.vault_a.key() { Ok((&a.vault_b, &a.vault_a)) }
+    else { err!(VaultError::InvalidStrategy) }
+}
+
+fn check_position_nft(info: &AccountInfo, owner: Pubkey, mint: Pubkey) -> Result<()> {
+    require_keys_eq!(*info.owner, token::ID, VaultError::InvalidStrategy);
+    let data = info.try_borrow_data()?;
+    let nft = TokenAccount::try_deserialize(&mut &data[..])?;
+    require!(nft.owner == owner && nft.mint == mint && nft.amount == 1, VaultError::InvalidStrategy);
+    Ok(())
+}
+
+fn position_liquidity(info: &AccountInfo, nft: Pubkey) -> Result<u128> {
+    require_keys_eq!(*info.owner, raydium_position::RAYDIUM_CLMM, VaultError::InvalidStrategy);
+    let data = info.try_borrow_data()?;
+    require!(data.len() >= 97, VaultError::InvalidStrategy);
+    require!(data[9..41] == nft.to_bytes() && data[41..73] == raydium_position::POSITION_POOL.to_bytes(), VaultError::InvalidStrategy);
+    let bytes: [u8; 16] = data[81..97].try_into().map_err(|_| VaultError::InvalidStrategy)?;
+    Ok(u128::from_le_bytes(bytes))
+}
+
+fn decrease_position_checked<'info>(a: &mut PositionAction<'info>, r: &[AccountInfo<'info>], closing: bool, min_a: u64, min_b: u64) -> Result<()> {
+    require!(a.strategy_state.in_market, VaultError::InvalidStrategy);
+    let count = if closing { r.len().checked_sub(2).ok_or(VaultError::InvalidStrategy)? } else { r.len() };
+    require!(count == 16 || count == 17, VaultError::InvalidStrategy);
+    require_keys_eq!(r[0].key(), a.vault_state.key(), VaultError::InvalidStrategy);
+    require_keys_eq!(r[2].key(), a.strategy_state.personal_position, VaultError::InvalidStrategy);
+    check_position_nft(&r[1], a.vault_state.key(), a.strategy_state.position_nft_mint)?;
+    let (first, second) = position_vault_order(a, &r[9], &r[10])?;
+    require_keys_eq!(r[14].key(), first.mint, VaultError::InvalidStrategy);
+    require_keys_eq!(r[15].key(), second.mint, VaultError::InvalidStrategy);
+    require_keys_eq!(r[11].key(), a.token_program.key(), VaultError::InvalidStrategy);
+    let liquidity = position_liquidity(&r[2], a.strategy_state.position_nft_mint)?;
+    let mint = a.vault_state.token_mint;
+    let bump = [a.vault_state.bump];
+    let seeds: &[&[u8]] = &[b"vault", mint.as_ref(), &bump];
+    let args = raydium_position::DecreasePositionArgs { liquidity: if closing { liquidity } else { 0 }, amount_min_a: min_a, amount_min_b: min_b };
+    raydium_position::decrease_position_cpi(&a.clmm_program.to_account_info(), &r[..count], &args, &[seeds])?;
+    if closing { require!(position_liquidity(&r[2], a.strategy_state.position_nft_mint)? == 0, VaultError::InvalidStrategy); }
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct InitializePositionStrategy<'info> {
+    #[account(
+        seeds = [b"vault", vault_state.token_mint.as_ref()],
+        bump = vault_state.bump,
+        has_one = admin @ VaultError::Unauthorized,
+    )]
+    pub vault_state: Account<'info, VaultState>,
+
+    #[account(
+        init,
+        payer = admin,
+        space = StrategyState::LEN,
+        seeds = [b"position_strategy", vault_state.key().as_ref()],
+        bump,
+    )]
+    pub strategy_state: Account<'info, StrategyState>,
+
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct InitializeVault<'info> {
     /// VaultState PDA — seeds: ["vault", token_mint]
     #[account(
@@ -528,6 +718,24 @@ pub struct Withdraw<'info> {
 // State
 // -----------------------------------------------------------------------------
 
+/// Неделя 13: отдельный PDA состояния стратегии Raydium CLMM.
+#[account]
+#[derive(Default)]
+pub struct StrategyState {
+    pub vault: Pubkey,
+    pub in_market: bool,
+    pub needs_sync: bool,
+    pub position_nft_mint: Pubkey,
+    pub personal_position: Pubkey,
+    pub tick_lower: i32,
+    pub tick_upper: i32,
+    pub bump: u8,
+}
+
+impl StrategyState {
+    pub const LEN: usize = 8 + 32 + 1 + 1 + 32 + 32 + 4 + 4 + 1;
+}
+
 #[account]
 #[derive(Default)]
 pub struct VaultState {
@@ -615,4 +823,6 @@ pub enum VaultError {
     InvalidStrategy,
     #[msg("Swap output below specified minimum or input not fully spent")]
     InvalidSwapResult,
+    #[msg("Position is already open")]
+    PositionAlreadyOpen,
 }

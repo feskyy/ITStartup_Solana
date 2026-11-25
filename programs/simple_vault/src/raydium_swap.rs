@@ -1,15 +1,8 @@
-//! Devnet-only CLMM swap_v2 CPI adapter.
-//! ABI: raydium-cpi-example proxy_swap.rs.
-
+//! Devnet-only CLMM swap_v2 CPI adapter. ABI: raydium-cpi-example proxy_swap.rs.
 use super::*;
-use anchor_lang::solana_program::{
-    instruction::{AccountMeta, Instruction},
-    program::invoke_signed,
-    pubkey,
-};
+use anchor_lang::solana_program::{instruction::{AccountMeta, Instruction}, program::invoke_signed, pubkey};
 
 pub const STRATEGY_LOCK: u64 = u64::MAX;
-
 const RAYDIUM: Pubkey = pubkey!("DRayAUgENGQBKVaX8owNhgzkEDyoHTGVEGHVJT1E9pfH");
 const POOL: Pubkey = pubkey!("4tAPx2mdfGQCWmx3EV4qCkbWK52PbzWVNFpxLkfs25nP");
 const CONFIG: Pubkey = pubkey!("CD4aJtX11cqTCAc83nxSPkkh5JW2yjD6uwHeovjqQ1qu");
@@ -35,6 +28,9 @@ pub fn initialize(_ctx: Context<InitializeStrategy>) -> Result<()> { Ok(()) }
 
 #[derive(Accounts)]
 pub struct SwapVault<'info> {
+    #[account(seeds=[b"position_strategy", vault_state.key().as_ref()], bump=strategy_state.bump,
+        constraint=strategy_state.vault == vault_state.key() @ VaultError::InvalidStrategy)]
+    pub strategy_state: Account<'info, StrategyState>,
     pub admin: Signer<'info>,
     #[account(mut, seeds=[b"vault", vault_state.token_mint.as_ref()], bump=vault_state.bump,
         has_one=admin, constraint=vault_state.token_mint == MINT_A @ VaultError::InvalidStrategy)]
@@ -106,7 +102,7 @@ pub fn execute<'info>(ctx: Context<'_, '_, '_, 'info, SwapVault<'info>>, amount:
     } else { (before_b.checked_sub(a.vault_b.amount), a.vault_a.amount.checked_sub(before_a)) };
     require!(spent == Some(amount) && received.unwrap_or(0) >= min_out, VaultError::InvalidSwapResult);
     // Preserve the old account layout. Sentinel blocks deposits AND withdrawals until B is zero.
-    a.vault_state.total_tokens = if a.vault_b.amount == 0 { a.vault_a.amount } else { STRATEGY_LOCK };
+    a.vault_state.total_tokens = if a.vault_b.amount == 0 && !a.strategy_state.needs_sync { a.vault_a.amount } else { STRATEGY_LOCK };
     msg!("Swap: spent={}, received={}, A={}, B={}", amount, received.unwrap(), a.vault_a.amount, a.vault_b.amount);
     Ok(())
 }

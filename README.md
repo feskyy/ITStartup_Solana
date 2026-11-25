@@ -369,3 +369,278 @@ Raydium вернул ошибку:
 #### Заключение
 
 В рамках Week 12 реализован и практически проверен обмен токенов между хранилищами Simple Vault через Raydium CLMM CPI. Подтверждены успешный обмен, изменение цены пула, защита от недопустимого slippage, атомарность отклонённой транзакции, обратный обмен и восстановление учёта хранилища.
+
+## Week 13 — Raydium CLMM Position Management
+
+### 1. Цель работы
+
+Реализовать управление концентрированной ликвидностью Raydium CLMM через смарт-контракт Simple Vault в сети Solana Devnet.
+
+В рамках работы реализованы открытие LP-позиции, сбор торговых комиссий, закрытие позиции, ребалансировка активов и синхронизация внутреннего учёта хранилища.
+
+### 2. Технологический стек
+
+- Solana Devnet.
+- Rust.
+- Anchor 0.31.1.
+- Solana CLI 2.1.0.
+- TypeScript.
+- Raydium SDK V2 0.2.87-alpha.
+- SPL Token Program.
+- Cross-Program Invocation (CPI).
+- Program Derived Address (PDA).
+
+### 3. Архитектура реализации
+
+Для управления LP-позицией создан отдельный PDA `StrategyState`, позволяющий сохранить существующую структуру `VaultState` без изменения её размера.
+
+Состояние стратегии содержит следующие поля:
+
+| Поле | Назначение |
+|---|---|
+| vault | Адрес хранилища |
+| in_market | Наличие открытой LP-позиции |
+| needs_sync | Необходимость синхронизации учёта |
+| position_nft_mint | Mint NFT позиции |
+| personal_position | Аккаунт позиции Raydium |
+| tick_lower | Нижняя граница позиции |
+| tick_upper | Верхняя граница позиции |
+| bump | Bump PDA |
+
+Реализованы следующие инструкции:
+
+| Инструкция | Назначение |
+|---|---|
+| initialize_position_strategy | Инициализация состояния стратегии |
+| open_position | Открытие LP-позиции через Raydium CPI |
+| collect_fees | Сбор накопленных торговых комиссий |
+| close_position | Возврат ликвидности и закрытие позиции |
+| sync_vault | Синхронизация бухгалтерского учёта |
+
+Модуль `raydium_position.rs` отвечает за формирование CPI-вызовов Raydium CLMM.
+
+Инструкция `swap` дополнена проверками состояния стратегии.
+
+### 4. Адреса Devnet
+
+- Simple Vault Program: `AQ1t23jJHzxzT1YR1n5ygPeamaEjg3kEYG7tyitDyapm`
+- Raydium CLMM Program: `DRayAUgENGQBKVaX8owNhgzkEDyoHTGVEGHVJT1E9pfH`
+- Pool ID: `4tAPx2mdfGQCWmx3EV4qCkbWK52PbzWVNFpxLkfs25nP`
+- Vault PDA: `8BhjDWjuCJ1XbMKssyjx59B53rufTZh99PQpHziDhZjG`
+- Position NFT: `7gzNTj6uvEbKffpeETVbjHw9sc8sVWaiaYH9oidWN2xq`
+- Personal Position: `FgruBP4C29NctkydfGcy13mkpq5g6VbijWZiNVSnZ8Nc`
+- Independent Trader: `EAgnDMT9r5TUP6G1M4jRFxf81cuwpnBF9J47ctfYJprF`
+
+### 5. Открытие LP-позиции
+
+Перед открытием позиции выполнен обмен 10 Token A на 9.974531 Token B.
+
+Позиция открыта со следующими параметрами:
+
+| Параметр | Значение |
+|---|---:|
+| Целевой нижний предел цены | 0.9 |
+| Целевой верхний предел цены | 1.1 |
+| Tick Lower | -1080 |
+| Tick Upper | 960 |
+| Liquidity | 186125742 |
+| Внесено Token A | 8.731306 |
+| Внесено Token B | 9.775040 |
+
+Фактические границы позиции определяются выбранными ticks с учётом tick spacing пула.
+
+В логах транзакции подтверждён успешный вызов Raydium `OpenPositionV2`.
+
+Принадлежность NFT хранилищу проверена командой `spl-token accounts`. Vault PDA владел одной единицей NFT позиции.
+
+После открытия позиции установлены `in_market = true` и `needs_sync = true`.
+
+### 6. Независимые торговые операции
+
+Для генерации торговых комиссий создан отдельный кошелёк, не являющийся администратором Vault.
+
+Начальный баланс трейдера составлял 500 Token A и 500 Token B.
+
+| Swap | Направление | Отправлено | Получено | Транзакция |
+|---|---|---:|---:|---|
+| 1 | A → B | 100 A | 99.694090 B | [Explorer](https://explorer.solana.com/tx/xSjYttrkxr9hjjZ2XTAHm2Smh9XgoyLZFDANpStQ7bqnac4RbuXKyWMR81uSk9HjtLwhXXSQZkTJV4KUJYyaN2B?cluster=devnet) |
+| 2 | B → A | 100 B | 99.805914 A | [Explorer](https://explorer.solana.com/tx/2J8d86pJk7KYvmVCjgzYCDDzFYEoYWfswQKG4eoahiZ8h2aJkSJpusLGdJW3vCNvVcipd1ShoYJQ1FXQ3LZsXPZY?cluster=devnet) |
+| 3 | A → B | 100 A | 99.694142 B | [Explorer](https://explorer.solana.com/tx/5VAwf8az4zRpPLkMDQpsTYP9K7vzTnG2teq1Y3KXQqPeEpg5zFL9fX9zxesT9ivpjCfQgTq7KyeRaWLvNCcu67EJ?cluster=devnet) |
+| 4 | B → A | 100 B | 99.805862 A | [Explorer](https://explorer.solana.com/tx/4o2CcHmDW6KT6pwKn9H6fQNxk9oPxMcso3uBKXgZo32WHiQzWMgQLU6XPws2D99goLbsekmaHV62iunNgqPLrDYy?cluster=devnet) |
+
+Все четыре операции выполнены успешно.
+
+### 7. Сбор комиссий
+
+Инструкция `collect_fees` использует Raydium `DecreaseLiquidityV2` с нулевым количеством снимаемой ликвидности.
+
+| Актив | До Collect | После Collect | Комиссия |
+|---|---:|---:|---:|
+| Token A | 80.219256 | 80.219622 | 0.000366 |
+| Token B | 0.199491 | 0.199857 | 0.000366 |
+
+Получение ненулевых комиссий подтверждено изменением фактических балансов Vault.
+
+После сбора комиссий LP-позиция оставалась открытой.
+
+### 8. Закрытие позиции и Slippage Protection
+
+Инструкция `close_position` возвращает ликвидность в хранилище и закрывает позицию Raydium.
+
+| Актив | Минимальный выход | Фактический выход |
+|---|---:|---:|
+| Token A | 8.643895 | 8.731208 |
+| Token B | 9.677385 | 9.775137 |
+
+Фактический выход обоих токенов превышает заданный минимум.
+
+В логах подтверждены успешные CPI-вызовы `DecreaseLiquidityV2` и `ClosePosition`.
+
+После закрытия:
+
+- `in_market = false`.
+- `needs_sync = true`.
+- Адреса NFT и Personal Position сброшены.
+- NFT позиции отсутствует на балансе Vault.
+- Депозиты и вывод остаются заблокированными до синхронизации.
+
+### 9. Ребалансировка и синхронизация
+
+Весь оставшийся баланс Token B, составляющий 9.974994, обменян на 9.950514 Token A.
+
+После ребалансировки выполнена инструкция `sync_vault`.
+
+Результаты полного цикла:
+
+| Операция | Vault A | Vault B | Total Shares |
+|---|---:|---:|---:|
+| Initial State | 98.950562 | 0 | 99 |
+| Swap A → B | 88.950562 | 9.974531 | 99 |
+| Open Position | 80.219256 | 0.199491 | 99 |
+| Collect Fees | 80.219622 | 0.199857 | 99 |
+| Close Position | 88.950830 | 9.974994 | 99 |
+| Rebalance | 98.901344 | 0 | 99 |
+| Sync Vault | 98.901344 | 0 | 99 |
+| Deposit | 99.901344 | 0 | 100.000997 |
+| Withdraw | 98.902341 | 0 | 99.000997 |
+
+Во время открытой позиции часть активов находится в пуле Raydium и не отражается в свободных балансах Vault A и Vault B.
+
+Все значения токенов и shares приведены с учётом 6 decimals.
+
+### 10. Финансовый результат
+
+Начальный баланс стратегии: 98.950562 Token A.
+
+Баланс после ребалансировки: 98.901344 Token A.
+
+Финансовый результат:
+
+P = 98.901344 − 98.950562 = −0.049218 Token A.
+
+ROI = −0.049218 / 98.950562 × 100% ≈ −0.04974%.
+
+Стоимость одной Share:
+
+- До стратегии: 0.999500626 Token A.
+- После стратегии: 0.999003475 Token A.
+
+Полученные LP-комиссии не покрыли расходы на подготовительный и обратный обмены.
+
+Сетевые комиссии в SOL не включены в расчёт доходности.
+
+### 11. Проверка безопасности
+
+Во время открытой LP-позиции выполнены отрицательные тесты:
+
+| Проверка | Результат |
+|---|---|
+| Deposit при открытой позиции | StrategyLocked, 6009 |
+| Withdraw при открытой позиции | StrategyLocked, 6009 |
+| Повторное открытие позиции | Strategy not ready |
+| Принадлежность NFT Vault PDA | Подтверждена |
+| Минимальный выход при закрытии | Соблюдён |
+| Deposit после Sync | Успешно |
+| Withdraw после Sync | Успешно |
+
+Ошибки Deposit и Withdraw подтверждены симуляцией транзакций Anchor. Отдельные подписи отклонённых транзакций отсутствуют.
+
+Повторное открытие позиции было отклонено на уровне клиента.
+
+Стратегические инструкции предусматривают проверку полномочий администратора. Отдельный отрицательный on-chain тест неавторизованного вызова не проводился.
+
+### 12. Транзакции Solana Explorer
+
+| Операция | Транзакция |
+|---|---|
+| Deploy Week 13 | [Explorer](https://explorer.solana.com/tx/5RGqiMbFErMh8Bm9Wy5gWhiXNqTsvzMpNsdF3zXPUahEG4TqPpv1LWqGWdgah2kpiJLviUJRhQB94o54Xs9YktMr?cluster=devnet) |
+| Initialize Strategy | [Explorer](https://explorer.solana.com/tx/Qp5abNn5uJaAhQnTB7oAHjYnisRqatYAVyBt4jGyMfuJyM4dHmpoizXYnGyjDTJiHL13hjUrnKCbPKFxrmK5X8s?cluster=devnet) |
+| Swap A → B | [Explorer](https://explorer.solana.com/tx/2j1oDb7AqDSrypHLJUfLS5TjZiYABFRczTGhTqGeGfHjhLtyZUdprwS3YHRr8SVMzvxxbNAE387uzHX3V3XZ2GVd?cluster=devnet) |
+| Open Position | [Explorer](https://explorer.solana.com/tx/6WerVgBvGbpLnizQBToRQAwJN4XhshYx925gvhyJJWcg4C9Ku33JE3Lhxg67x3oZayzQ8TB6dxoQ1wkWJ6MkBpY?cluster=devnet) |
+| Collect Fees | [Explorer](https://explorer.solana.com/tx/3Z4bz7JVJHUHfbMCdJTtUE4tfk9EBszSyUK6UrxkkC4hGPQ3L7oRgu6ShNSMLnksQA7W9MJ9GhbTRini8LZiCmUt?cluster=devnet) |
+| Close Position | [Explorer](https://explorer.solana.com/tx/2hGU2sjTeSL97EGhNVUgz2XbFtx6i2n68adc13J8tGi9qckmkqLSwqNt2VshVbvzqDEXBS1vdwz5o53aVpVczkCm?cluster=devnet) |
+| Rebalance | [Explorer](https://explorer.solana.com/tx/46SqKkmy9R3KWSYtahz95jrdqRHxWzhkx2tWV67eE9fQhiega9u4NHQDqffraE6XqhwBankAx82cZ72kzkY1jfoF?cluster=devnet) |
+| Sync Vault | [Explorer](https://explorer.solana.com/tx/4Gbdayi6mcPNVksRQQuMGjvLtsVAz2Ewp1XTDCUqjAbqtDYHsSeH4VeJdzvXbsfWFM7Rq6HnMgkDiRFtVdQ1hk2X?cluster=devnet) |
+| Deposit after Sync | [Explorer](https://explorer.solana.com/tx/2EUgYTcU7rMNArxQ5aX9Q1yGPJfkgL1XfDVHmjcYvXCyhDLAuRJvSiScSU7XJZ3Sr4br2NhkdQkCEy7B378gXFTg?cluster=devnet) |
+| Withdraw after Sync | [Explorer](https://explorer.solana.com/tx/47Khgm5Y2Rx2cK2LNNgomQAVc5K7Xi1B6uzwxvqnPwtgJ4WvzWQWcbg6aSUMXWwpGCdDAWs4dkAkPpzNT6zPpt2C?cluster=devnet) |
+
+Исходные результаты и логи: [week13-results.json](week13-results.json).
+
+### 13. Воспроизведение сценария
+
+Предварительные условия: развёрнутый смарт-контракт, инициализированный Vault, существующий пул Raydium Week 11, достаточный баланс токенов и SOL.
+
+Последовательность команд администратора:
+
+    yarn week13 init
+    yarn week13 status
+    yarn week12 swap 10
+    yarn week13 open
+    yarn week13 status
+
+Для проверки блокировки при открытой позиции:
+
+    yarn week12 deposit 1
+    yarn week12 withdraw 1
+
+Обе операции должны завершиться ошибкой StrategyLocked.
+
+Для независимых обменов используется отдельный предварительно пополненный кошелёк:
+
+    KEYPAIR="$HOME/.config/solana/week13-trader-safe.json" yarn tsx scripts/week13-trader.ts a-to-b 100
+    KEYPAIR="$HOME/.config/solana/week13-trader-safe.json" yarn tsx scripts/week13-trader.ts b-to-a 100
+    KEYPAIR="$HOME/.config/solana/week13-trader-safe.json" yarn tsx scripts/week13-trader.ts a-to-b 100
+    KEYPAIR="$HOME/.config/solana/week13-trader-safe.json" yarn tsx scripts/week13-trader.ts b-to-a 100
+
+Завершение стратегии от имени администратора:
+
+    yarn week13 collect
+    yarn week13 close
+    yarn week12 reverse all
+    yarn week13 sync
+    yarn week12 deposit 1
+    yarn week12 withdraw 1
+    yarn week13 status
+    yarn week13:report
+
+Команды изменяют состояние Devnet. Перед повторным запуском необходимо проверить текущее состояние стратегии и сохранить результаты предыдущего тестирования.
+
+### 14. Ограничения реализации
+
+Для взаимодействия с Raydium используется локальный ABI-адаптер `raydium_position.rs`, разработанный на основе официальных CPI-примеров Raydium.
+
+Прямое подключение официальной Rust-библиотеки не использовано из-за различий версий Anchor. Это отклонение от предложенного методичкой способа интеграции требует согласования с преподавателем.
+
+Для временной блокировки бухгалтерских операций сохранён маркер `total_tokens = u64::MAX`. Дополнительно введено отдельное состояние StrategyState.
+
+Сбор комиссий реализован для выбранного учебного пула. Дополнительные reward-токены не поддерживаются.
+
+Реализация предназначена для Devnet и не проходила полноценный аудит безопасности. Использование в Mainnet не рекомендуется.
+
+### 15. Заключение
+
+В рамках Week 13 реализован и практически проверен полный цикл управления LP-позицией Raydium CLMM через Simple Vault.
+
+Подтверждены открытие позиции, принадлежность NFT хранилищу, получение торговых комиссий, закрытие позиции, защита минимального выхода, ребалансировка и восстановление бухгалтерского учёта.
+
+После завершения стратегии успешно выполнены депозит и вывод средств. Основной функциональный сценарий Week 13 завершён.

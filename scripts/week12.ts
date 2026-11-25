@@ -11,7 +11,8 @@ const saved = readAddresses();
 const mintA = pk(saved.tokenA), mintB = pk(saved.tokenB), pool = pk(saved.poolId), clmm = pk(saved.programId);
 const pda = (seed:string, ...keys:PublicKey[]) => PublicKey.findProgramAddressSync([Buffer.from(seed), ...keys.map(k=>k.toBuffer())], id)[0];
 const vaultState = pda('vault', mintA), vaultA = pda('vault_tokens', mintA), vaultB = pda('vault_tokens_b', vaultState), shareMint = pda('share_mint', mintA), userCard = pda('user_card', vaultState, owner.publicKey);
-const evidence = 'week12-results.json';
+const strategyState = pda('position_strategy', vaultState);
+const evidence = 'week13-results.json';
 function record(patch:any) { const prev = fs.existsSync(evidence)?JSON.parse(fs.readFileSync(evidence,'utf8')):{}; fs.writeFileSync(evidence, JSON.stringify({...prev,...patch},null,2)+'\n'); }
 const url = (s:string)=>`https://explorer.solana.com/tx/${s}?cluster=devnet`;
 const raw = (x:any):BN => new BN((x?.amount?.raw ?? x?.raw ?? x?.amount ?? x).toString());
@@ -27,7 +28,8 @@ async function main(){
   if(!await connection.getAccountInfo(vaultState)) console.log(url(await program.methods.initializeVault().accounts({...common,tokenMint:mintA,vaultTokenAccount:vaultA,shareMint,rent:SYSVAR_RENT_PUBKEY}).rpc()));
   const state=await program.account.vaultState.fetch(vaultState); if(!state.admin.equals(owner.publicKey)) throw Error('Wallet is not vault admin');
   if(!await connection.getAccountInfo(vaultB)) console.log(url(await program.methods.initializeStrategy().accounts({...common,mintB,vaultB}).rpc()));
-  record({vaultState:vaultState.toBase58(),vaultA:vaultA.toBase58(),vaultB:vaultB.toBase58(),shareMint:shareMint.toBase58()}); return;
+  if (!await connection.getAccountInfo(strategyState)) console.log(url(await program.methods.initializePositionStrategy().accounts({vaultState,strategyState,admin:owner.publicKey,systemProgram:SystemProgram.programId}).rpc()));
+   record({vaultState:vaultState.toBase58(),vaultA:vaultA.toBase58(),vaultB:vaultB.toBase58(),shareMint:shareMint.toBase58()}); return;
  }
  if(cmd==='deposit'||cmd==='withdraw'){
   const userTokenAccount=(await getOrCreateAssociatedTokenAccount(connection,owner,mintA,owner.publicKey)).address;
@@ -65,7 +67,7 @@ async function main(){
  const poolVaultB=pk(data.poolKeys.vault[poolMintA.equals(mintA)?'B':'A']);
  const before=await balances(); const priceBefore=String(data.poolInfo.price);
  console.log({input:input.toString(),expected:expected.toString(),minimum:min.toString(),priceBefore,before});
- const ix=await program.methods.swap(input,min,forward).accounts({admin:owner.publicKey,vaultState,vaultA,vaultB,mintA,mintB,clmmProgram:clmm,ammConfig:pk(saved.ammConfigId),poolState:pool,poolVaultA,poolVaultB,observationState:observation,tokenProgram:TOKEN_PROGRAM_ID,tokenProgram2022:TOKEN_2022_PROGRAM_ID,memoProgram:pk('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')}).remainingAccounts(remaining.map(pubkey=>({pubkey,isSigner:false,isWritable:true}))).instruction();
+ const ix=await program.methods.swap(input,min,forward).accounts({strategyState,admin:owner.publicKey,vaultState,vaultA,vaultB,mintA,mintB,clmmProgram:clmm,ammConfig:pk(saved.ammConfigId),poolState:pool,poolVaultA,poolVaultB,observationState:observation,tokenProgram:TOKEN_PROGRAM_ID,tokenProgram2022:TOKEN_2022_PROGRAM_ID,memoProgram:pk('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')}).remainingAccounts(remaining.map(pubkey=>({pubkey,isSigner:false,isWritable:true}))).instruction();
  const block=await connection.getLatestBlockhash('confirmed'); const tx=new Transaction({...block,feePayer:owner.publicKey}).add(ComputeBudgetProgram.setComputeUnitLimit({units:600000}),ix);tx.sign(owner);
  // Skip preflight only for intentional failure, so Explorer gets a failed transaction.
  const signature=await connection.sendRawTransaction(tx.serialize(),{skipPreflight:cmd==='reject'}); console.log(url(signature));

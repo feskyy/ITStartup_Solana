@@ -9,7 +9,9 @@
     "week11:pool": "tsx scripts/create-clmm-pool.ts",
     "week11:position": "tsx scripts/open-position.ts",
     "week12": "tsx scripts/week12.ts",
-    "week12:report": "node scripts/week12-report.cjs"
+    "week12:report": "node scripts/week12-report.cjs",
+    "week13": "tsx scripts/week13.ts",
+    "week13:report": "node scripts/week13-report.cjs"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",
