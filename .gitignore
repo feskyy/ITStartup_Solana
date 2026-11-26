@@ -7,7 +7,6 @@ yarn-error.log
 
 # Anchor
 .anchor/
-app/
 # Скомпилированный бинарник (большой, генерируется через anchor build)
 target/deploy/*.so
 
@@ -22,3 +21,25 @@ devnet-wallet.json
 .DS_Store
 .vscode/
 .idea/
+
+# Week 14 — Frontend
+app/node_modules/
+app/dist/
+app/.vite/
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Additional wallet protection
+**/*-keypair.json
+**/week13-trader*.json
+
+
+# Additional private wallet files
+**/week14-trader*.json
+**/*-wallet.json
+**/*.pem
+**/*.key

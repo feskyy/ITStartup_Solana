@@ -1,0 +1,25 @@
+{
+  "network": "devnet",
+  "decimals": 6,
+  "tokenA": "CCRTcoXihFnKNXepJk2eCA87qJNz8HWSgVMV19ctT1r",
+  "tokenB": "A2dsMy371WJkZyuVBWUg9BscPz9SRcDG8f77C5YUDXX5",
+  "programId": "DRayAUgENGQBKVaX8owNhgzkEDyoHTGVEGHVJT1E9pfH",
+  "ammConfigId": "CD4aJtX11cqTCAc83nxSPkkh5JW2yjD6uwHeovjqQ1qu",
+  "feeTier": {
+    "index": 0,
+    "tradeFeeRate": 2500,
+    "tickSpacing": 60
+  },
+  "initialPrice": 1,
+  "poolId": "4tAPx2mdfGQCWmx3EV4qCkbWK52PbzWVNFpxLkfs25nP",
+  "poolTx": "szmL6EQM3DgZP83qZrSku2r5KnYVKUq6RNEx5xAq65uanvJSgUEAQiNeNYgdWjqD8G7TFLXhPsLAjpgbpd1mmpP",
+  "positionNft": "FiiVsEg2qKrsFDiFdsAv6KFnbKnDE4vGCECbbtN7Jj6J",
+  "positionTx": "3AxxHDnrvK77R6NwCVCTmndDBX4HPwKEsyuJoP2ub69kcoiZUtVVPdESqZjiuMsSH1N4GQNhPVZdF7w5W5dnpCdk",
+  "position": {
+    "lowerPrice": 0.9,
+    "upperPrice": 1.1,
+    "tickLower": -1080,
+    "tickUpper": 960,
+    "rangePercent": 10
+  }
+}

@@ -10,6 +10,9 @@ Simple Vault — смарт-контракт для хранилища SPL-то�
 - Неделя 11 — свои тестовые токены и свой CLMM-пул Raydium в devnet (скриптами, контракт не менялся).
 - Неделя 12 — интеграция Raydium CLMM через CPI, второе токен-хранилище, обмен токенов, защита от slippage и обратный обмен с восстановлением учёта vault.
 
+- Неделя 13 — LP-позиция, комиссии, ребалансировка и синхронизация.
+- Неделя 14 — веб-интерфейс Liquidity Vault.
+
 ## 1. Инструкции контракта
 
 | Инструкция | Назначение | Кто вызывает |
@@ -22,6 +25,11 @@ Simple Vault — смарт-контракт для хранилища SPL-то�
 | `withdraw(shares)` | Сжигает share-токены и возвращает пользователю его долю токенов | пользователь |
 | `initialize_strategy` | Создаёт второе токен-хранилище для Token B | администратор |
 | `swap` | Выполняет обмен токенов A ↔ B через Raydium CLMM CPI | администратор |
+| `initialize_position_strategy` | Создаёт StrategyState | администратор |
+| `open_position` | Открывает LP-позицию | администратор |
+| `collect_fees` | Собирает комиссии | администратор |
+| `close_position` | Закрывает LP-позицию | администратор |
+| `sync_vault` | Восстанавливает учёт | администратор |
 
 ## 2. Схема аккаунтов
 
@@ -31,6 +39,9 @@ Simple Vault — смарт-контракт для хранилища SPL-то�
 | `vault_token_account` | `["vault_tokens", token_mint]` | PDA `vault_state` | сами токены, внесённые пользователями |
 | `share_mint` | `["share_mint", token_mint]` | PDA `vault_state` | mint share-токенов (6 decimals); выпускать может только программа |
 | `user_card` | `["user_card", vault_state, user]` | программа | vault, owner, `deposited`, `shares`, bump, `created_at` |
+
+| `vault_b` | `["vault_tokens_b", vault_state]` | SPL Token Program / PDA vault_state | Token B |
+| `strategy_state` | `["position_strategy", vault_state]` | программа | состояние LP-позиции и синхронизации |
 
 Карточку пользователя всегда можно найти по адресу: он вычисляется из адреса vault и адреса пользователя, список пользователей хранить не нужно.
 
@@ -214,10 +225,9 @@ yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/vault.ts
 - Репозиторий: https://github.com/feskyy/ITStartup_Solana
 - **Транзакция депозита в Explorer:** https://explorer.solana.com/tx/23o4ZKvv4rZvzZKbL3btdHLpmeDQpkN7Vx5XJwzW5qX9btbjpnptnUkuYkopzkDoeLtKS9ALQWsKW3vhCi6xrTe2?cluster=devnet
 
-- **Транзакция вывода в Explorer: https://explorer.solana.com/tx/3qkLB3QH96L4PU5jT3qkRuR1iGfYHq2jpjXNT66wQwCi3WA3Kf7N9wH4Er8EEkWgCBzJG9ZEKvs3tdrqF6Vdef57?cluster=devnet
+- **Транзакция вывода в Explorer:** https://explorer.solana.com/tx/3qkLB3QH96L4PU5jT3qkRuR1iGfYHq2jpjXNT66wQwCi3WA3Kf7N9wH4Er8EEkWgCBzJG9ZEKvs3tdrqF6Vdef57?cluster=devnet
 
 - Программы, которые участвуют в транзакции депозита: Simple Vault (`AQ1t23jJHzxzT1YR1n5ygPeamaEjg3kEYG7tyitDyapm`) вызывает Token Program (`transfer` — перевод токенов пользователя в vault, `mint_to` — выпуск share-токенов). 
-- Программы, которые участвуют в транзакции депозита: Simple Vault (`AQ1t23jJHzxzT1YR1n5ygPeamaEjg3kEYG7tyitDyapm`) вызывает Token Program (`transfer` — перевод токенов пользователя в vault, `mint_to` — выпуск share-токенов).
 
 ## 9. Безопасность
 
@@ -258,7 +268,7 @@ yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/vault.ts
 
 Учебное ограничение: `total_tokens == u64::MAX` означает активную стратегию (не баланс). Депозиты и вывод блокируются до полного обратного обмена B → A; затем учёт синхронизируется с балансом A. Размер VaultState не изменён. Для недели 13 рекомендуется заменить sentinel отдельным состоянием стратегии и учитывать открытую LP-позицию. Не использовать в mainnet.
 
-Фактические транзакции добавляются командой `yarn week12:report` после исполнения в Devnet. До этого результаты не подтверждены.
+Фактические транзакции добавляются командой `yarn week12:report` после исполнения в Devnet. Ниже приведены сохранённые результаты тестирования.
 
 
 <!-- WEEK12_EVIDENCE_START -->
@@ -644,3 +654,142 @@ ROI = −0.049218 / 98.950562 × 100% ≈ −0.04974%.
 Подтверждены открытие позиции, принадлежность NFT хранилищу, получение торговых комиссий, закрытие позиции, защита минимального выхода, ребалансировка и восстановление бухгалтерского учёта.
 
 После завершения стратегии успешно выполнены депозит и вывод средств. Основной функциональный сценарий Week 13 завершён.
+
+
+## Week 14 — Capstone Build Week: Liquidity Vault
+
+### Цель и продукт
+
+Готовый учебный веб-интерфейс для ранее развёрнутого Simple Vault: пользователь управляет депозитом и долями через Phantom, администратор управляет Raydium CLMM. В Week 14 не требуется повторный deploy для демонстрации существующего vault.
+
+### Запуск и стек
+
+Требуются Node.js 20.19+ или 22.12+ (проверено на 24.10.0), Yarn Classic и расширение Phantom с включённым режимом тестовых сетей Solana Devnet.
+
+Из корня репозитория:
+
+```bash
+cd app
+yarn install --frozen-lockfile
+yarn dev
+```
+
+Откройте http://localhost:5173/ и подключите Phantom. Для демонстрации уже развёрнутой программы повторный deploy не нужен. Нужны тестовые SOL для комиссии и именно Token A данного проекта для депозита. Faucet выдаёт SOL, а не токены проекта; тестовые токены предоставляет команда.
+
+По умолчанию локальный Vite проксирует HTTP RPC через `/rpc` и WebSocket через `/rpc-ws`. Не создавайте `.env` без необходимости. `.env.example` содержит пример альтернативного RPC. Production-сборка использует прямой RPC; доступность из браузера зависит от RPC и CORS. Публичный хостинг не проверен.
+
+```bash
+yarn build
+```
+
+### Архитектура
+
+```mermaid
+flowchart TD
+    U[User] --> UI[React / Vite]
+    A[Administrator] --> UI
+    UI --> W[Phantom: transaction signature]
+    UI --> RPC[Solana Devnet RPC]
+    W --> RPC
+    RPC --> P[Simple Vault Program]
+    P --> VS[VaultState PDA]
+    P --> SS[StrategyState PDA]
+    P --> UC[UserCard PDA]
+    P -->|CPI| SPL[SPL Token Program]
+    SPL --> VA[Vault A / Vault B / Share Mint]
+    P -->|CPI| R[Raydium CLMM]
+    R --> LP[Pool / Personal Position / NFT]
+```
+
+| Модуль | Назначение |
+|---|---|
+| `app/src/hooks/useWallet.ts` | Подключение Phantom и смена аккаунта |
+| `app/src/hooks/useUser.ts` | Загрузка портфеля |
+| `app/src/lib/vault.ts`, `user.ts` | Чтение состояния и балансов |
+| `app/src/lib/amounts.ts` | Целочисленная арифметика сумм |
+| `app/src/lib/transactions.ts` | Симуляция, подписи, отправка и подтверждение |
+| `app/src/lib/userActions.ts` | Deposit и Withdraw |
+| `app/src/lib/adminActions.ts`, `raydium.ts` | Swap, quote, восстановление учёта |
+| `app/src/lib/positionActions.ts` | Open Position, Collect Fees, Close Position |
+| `app/src/pages/AdminDashboard.tsx` | Интерфейс администратора |
+| `app/src/idl/simple_vault.json` | IDL развёрнутой программы |
+| `scripts/week14-trader.ts` | Независимые обмены для тестирования комиссий |
+
+### Роли и сценарий демонстрации
+
+Connect → My Portfolio → Deposit / Withdraw → подпись Phantom → подтверждение и ссылка на Explorer. Карточка и необходимые ATA создаются при необходимости. При открытой стратегии операции с долями блокируются.
+
+## Администратор
+
+Admin Dashboard появляется только для публичного адреса администратора Vault. Контракт также проверяет полномочия. Для демонстрации используйте кошелёк администратора, не передавая его ключи другим людям.
+
+1. Swap A → B: ввести сумму, выбрать slippage, Get Quote, Execute Swap.
+2. Liquidity Position: задать диапазон цены и максимальные суммы обоих токенов, Calculate Position, Open Position.
+3. Collect Fees: собрать накопленные комиссии.
+4. Close Position: вернуть ликвидность.
+5. Reverse Swap All: обменять остаток B в A.
+6. Sync Vault: синхронизировать учёт, если требуется.
+
+Перед каждым действием проверяйте состояние и баланс. Не повторяйте транзакцию, пока не проверена предыдущая подпись. Все операции изменяют Devnet.
+
+### Адреса Devnet
+
+| Объект | Адрес |
+|---|---|
+| Program | [`AQ1t23jJHzxzT1YR1n5ygPeamaEjg3kEYG7tyitDyapm`](https://explorer.solana.com/address/AQ1t23jJHzxzT1YR1n5ygPeamaEjg3kEYG7tyitDyapm?cluster=devnet) |
+| VaultState | [`8BhjDWjuCJ1XbMKssyjx59B53rufTZh99PQpHziDhZjG`](https://explorer.solana.com/address/8BhjDWjuCJ1XbMKssyjx59B53rufTZh99PQpHziDhZjG?cluster=devnet) |
+| Vault A | [`J2XXhFpWZG9p5NuUhg82AiLCuh9PYLtgT4AKGNsZEaPx`](https://explorer.solana.com/address/J2XXhFpWZG9p5NuUhg82AiLCuh9PYLtgT4AKGNsZEaPx?cluster=devnet) |
+| Vault B | [`HbkscEwZMdVzDsLYyU27FpAjmsuWLPQcs9FyqkXpySpD`](https://explorer.solana.com/address/HbkscEwZMdVzDsLYyU27FpAjmsuWLPQcs9FyqkXpySpD?cluster=devnet) |
+| Share Mint | [`4xKsKBMZs1xGe8bhhX8Wx3rSWHsBL3W7kM6QAZDnVUji`](https://explorer.solana.com/address/4xKsKBMZs1xGe8bhhX8Wx3rSWHsBL3W7kM6QAZDnVUji?cluster=devnet) |
+| Raydium Pool | [`4tAPx2mdfGQCWmx3EV4qCkbWK52PbzWVNFpxLkfs25nP`](https://explorer.solana.com/address/4tAPx2mdfGQCWmx3EV4qCkbWK52PbzWVNFpxLkfs25nP?cluster=devnet) |
+| Token A | [`CCRTcoXihFnKNXepJk2eCA87qJNz8HWSgVMV19ctT1r`](https://explorer.solana.com/address/CCRTcoXihFnKNXepJk2eCA87qJNz8HWSgVMV19ctT1r?cluster=devnet) |
+| Token B | [`A2dsMy371WJkZyuVBWUg9BscPz9SRcDG8f77C5YUDXX5`](https://explorer.solana.com/address/A2dsMy371WJkZyuVBWUg9BscPz9SRcDG8f77C5YUDXX5?cluster=devnet) |
+| Administrator | [`mXNWnxD3gdAiWqsPFF1Zb9V4yZtJW1zMbr7FRgXRxJb`](https://explorer.solana.com/address/mXNWnxD3gdAiWqsPFF1Zb9V4yZtJW1zMbr7FRgXRxJb?cluster=devnet) |
+
+### Результаты тестирования (26 ноября 2026)
+
+Подтверждённые в ходе работы транзакции веб-интерфейса:
+
+| Операция | Результат | Explorer |
+|---|---|---|
+| Deposit 10 A | 10.009975 shares | [Explorer](https://explorer.solana.com/tx/54ZEWtc7szbuENBspzdEGUoTdgFrNdh2a7Ki1VEjLwEuMyPDP6KUAKG97o6SpRhcEcGyePKMCucdAxrsFLvSrb62?cluster=devnet) |
+| Withdraw 5 shares | 4.995017 A | [Explorer](https://explorer.solana.com/tx/kJ4QMNSkSQXAimaDW2UpVgrKmbHxiTtDtzmroQVShhgSyYBhufRzaJFsxhVsPWnYG7yVV9WQQqeofb4wDvNmVSR?cluster=devnet) |
+| Admin Swap 10 A | 9.974539 B | [Explorer](https://explorer.solana.com/tx/54wC2P2HsQL5L2H7GXTsj1UVWDRyfDh8tkqpeMNgXD7xvVNP9baCLW5B7aurLMKUP3j7v4wqHcosnHheqGBnsrVf?cluster=devnet) |
+| Open Position | Открытие LP-позиции | [Explorer](https://explorer.solana.com/tx/4Jguje8wPkS2aLCQv4ogMZUCGFk8thYUCFYprMFrLw2jinJPrQboFX1R1ogLZcQYJu7zctNLfBqfxRtNa5q33zAJ?cluster=devnet) |
+| Deposit 1 A (User) | 1.001472 shares | [Explorer](https://explorer.solana.com/tx/uc9ssZeRFGwA4LNAJ56pkNu5E9BVjGPpxcmcPQ6iT4GeUvyMsxzVqNeVwZWeYU1Zwn8W1Ke7CetkJYrbAD2ELGT?cluster=devnet) |
+| Withdraw 1 share (User) | 0.998529 A; Finalized | [Explorer](https://explorer.solana.com/tx/59LmFzJWjzZPBxMRTcx7BGTJY2ujiz4oS7aF19Bg9a9Yw51gV6x79yqGvaZ4rN3bx5jp2XAZC4DJjwDWMcMATkEm?cluster=devnet) |
+
+Интерфейс содержит также Collect Fees, Close Position, Reverse Swap All и Sync Vault. Подписи этих операций Week 14 необходимо дополнить из истории администратора; ссылки Week 13 не заменяют доказательства Week 14.
+
+#### Независимые обмены
+
+| Направление | Вход | Выход | Explorer |
+|---|---:|---:|---|
+| a-to-b | 100 | 99.694167 | [Explorer](https://explorer.solana.com/tx/MQjyHV6nxBC3SybXDKxDKv19gHrUuHCfYucs2JmdFn3ydghRD1ywpku83HL1DJsueWBvxQ5M8Tk8t1SjuresU32?cluster=devnet) |
+| b-to-a | 100 | 99.805837 | [Explorer](https://explorer.solana.com/tx/KQrEdDHs1Gi5WfWD2kdMredcyoDKYqwtdRzZTYEfUGbCfjDz7DdWPeBziCqdGW5aYjNVKNCdMNz5gCePBeRe4pB?cluster=devnet) |
+| a-to-b | 100 | 99.694219 | [Explorer](https://explorer.solana.com/tx/3yk5NNJ1vt1rDKWo6xLsHGwo626zRqx7Z9Q29fWjxnhidNb4VDGWVbpzkUrBCphyvV9WDzc7SLSUe6Weq1LZuvVz?cluster=devnet) |
+| b-to-a | 100 | 99.805785 | [Explorer](https://explorer.solana.com/tx/HxQqEKrk3AtYRubhFbzb5ZJCcpHhehcQ3BiQVLReo2LqwtLraWkNJnQLsthUfDyeP8DcDQui6ZFaXgTKFeSdNi2?cluster=devnet) |
+
+Исходные данные независимых обменов: [week14-results.json](week14-results.json).
+
+#### Итоговое состояние (снимок после последнего Withdraw)
+
+| Показатель | Значение |
+|---|---:|
+| Vault A | 104.859496 |
+| Vault B | 0 |
+| Total Shares | 105.013916 |
+| Share Price | 0.998530 |
+| in_market | false |
+| needs_sync | false |
+| paused | false |
+
+Сборка `yarn build` завершилась успешно (2935 модулей, Vite 7.3.8). Предупреждения о размере JS и `eval` в зависимости остаются. Публичное размещение не проверено; демонстрация выполняется локально.
+
+### Безопасность и ограничения
+
+Подписи пользовательских транзакций выполняются через Phantom; приватные ключи постоянных кошельков не нужны приложению. Для NFT позиции используется временный подписант. Секреты и файлы кошельков не должны попадать в Git. Проверка `.gitignore` сама по себе не гарантирует отсутствия секретов в истории. Учебная стратегия блокирует операции с долями до восстановления учёта; полноценная оценка активов в открытой позиции не реализована. Сохраняются ограничения ABI-адаптеров Week 12–13. Mainnet не поддерживается как проверенная среда.
+
+### Вклад команды
+
+Фактические имена участников и распределение задач необходимо подтвердить перед сдачей. История индивидуальных коммитов доступна в репозитории; не приписывать участникам неподтверждённую работу.

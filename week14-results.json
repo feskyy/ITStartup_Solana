@@ -1,0 +1,184 @@
+{
+  "traderSwaps": [
+    {
+      "signature": "MQjyHV6nxBC3SybXDKxDKv19gHrUuHCfYucs2JmdFn3ydghRD1ywpku83HL1DJsueWBvxQ5M8Tk8t1SjuresU32",
+      "explorer": "https://explorer.solana.com/tx/MQjyHV6nxBC3SybXDKxDKv19gHrUuHCfYucs2JmdFn3ydghRD1ywpku83HL1DJsueWBvxQ5M8Tk8t1SjuresU32?cluster=devnet",
+      "trader": "EAgnDMT9r5TUP6G1M4jRFxf81cuwpnBF9J47ctfYJprF",
+      "direction": "a-to-b",
+      "input": "100000000",
+      "minimum": "98697225",
+      "before": {
+        "a": "499611776",
+        "b": "499388232"
+      },
+      "after": {
+        "a": "399611776",
+        "b": "599082399"
+      }
+    },
+    {
+      "signature": "KQrEdDHs1Gi5WfWD2kdMredcyoDKYqwtdRzZTYEfUGbCfjDz7DdWPeBziCqdGW5aYjNVKNCdMNz5gCePBeRe4pB",
+      "explorer": "https://explorer.solana.com/tx/KQrEdDHs1Gi5WfWD2kdMredcyoDKYqwtdRzZTYEfUGbCfjDz7DdWPeBziCqdGW5aYjNVKNCdMNz5gCePBeRe4pB?cluster=devnet",
+      "trader": "EAgnDMT9r5TUP6G1M4jRFxf81cuwpnBF9J47ctfYJprF",
+      "direction": "b-to-a",
+      "input": "100000000",
+      "minimum": "98807778",
+      "before": {
+        "a": "399611776",
+        "b": "599082399"
+      },
+      "after": {
+        "a": "499417613",
+        "b": "499082399"
+      }
+    },
+    {
+      "signature": "3yk5NNJ1vt1rDKWo6xLsHGwo626zRqx7Z9Q29fWjxnhidNb4VDGWVbpzkUrBCphyvV9WDzc7SLSUe6Weq1LZuvVz",
+      "explorer": "https://explorer.solana.com/tx/3yk5NNJ1vt1rDKWo6xLsHGwo626zRqx7Z9Q29fWjxnhidNb4VDGWVbpzkUrBCphyvV9WDzc7SLSUe6Weq1LZuvVz?cluster=devnet",
+      "trader": "EAgnDMT9r5TUP6G1M4jRFxf81cuwpnBF9J47ctfYJprF",
+      "direction": "a-to-b",
+      "input": "100000000",
+      "minimum": "98697276",
+      "before": {
+        "a": "499417613",
+        "b": "499082399"
+      },
+      "after": {
+        "a": "399417613",
+        "b": "598776618"
+      }
+    },
+    {
+      "signature": "HxQqEKrk3AtYRubhFbzb5ZJCcpHhehcQ3BiQVLReo2LqwtLraWkNJnQLsthUfDyeP8DcDQui6ZFaXgTKFeSdNi2",
+      "explorer": "https://explorer.solana.com/tx/HxQqEKrk3AtYRubhFbzb5ZJCcpHhehcQ3BiQVLReo2LqwtLraWkNJnQLsthUfDyeP8DcDQui6ZFaXgTKFeSdNi2?cluster=devnet",
+      "trader": "EAgnDMT9r5TUP6G1M4jRFxf81cuwpnBF9J47ctfYJprF",
+      "direction": "b-to-a",
+      "input": "100000000",
+      "minimum": "98807727",
+      "before": {
+        "a": "399417613",
+        "b": "598776618"
+      },
+      "after": {
+        "a": "499223398",
+        "b": "498776618"
+      }
+    }
+  ],
+  "week": 14,
+  "network": "devnet",
+  "testDate": "2026-11-26",
+  "programId": "AQ1t23jJHzxzT1YR1n5ygPeamaEjg3kEYG7tyitDyapm",
+  "frontendTransactions": [
+    {
+      "operation": "User Deposit",
+      "signature": "54ZEWtc7szbuENBspzdEGUoTdgFrNdh2a7Ki1VEjLwEuMyPDP6KUAKG97o6SpRhcEcGyePKMCucdAxrsFLvSrb62",
+      "explorer": "https://explorer.solana.com/tx/54ZEWtc7szbuENBspzdEGUoTdgFrNdh2a7Ki1VEjLwEuMyPDP6KUAKG97o6SpRhcEcGyePKMCucdAxrsFLvSrb62?cluster=devnet",
+      "status": "success"
+    },
+    {
+      "operation": "User Withdraw",
+      "signature": "kJ4QMNSkSQXAimaDW2UpVgrKmbHxiTtDtzmroQVShhgSyYBhufRzaJFsxhVsPWnYG7yVV9WQQqeofb4wDvNmVSR",
+      "explorer": "https://explorer.solana.com/tx/kJ4QMNSkSQXAimaDW2UpVgrKmbHxiTtDtzmroQVShhgSyYBhufRzaJFsxhVsPWnYG7yVV9WQQqeofb4wDvNmVSR?cluster=devnet",
+      "status": "success"
+    },
+    {
+      "operation": "Admin Swap A to B",
+      "signature": "54wC2P2HsQL5L2H7GXTsj1UVWDRyfDh8tkqpeMNgXD7xvVNP9baCLW5B7aurLMKUP3j7v4wqHcosnHheqGBnsrVf",
+      "explorer": "https://explorer.solana.com/tx/54wC2P2HsQL5L2H7GXTsj1UVWDRyfDh8tkqpeMNgXD7xvVNP9baCLW5B7aurLMKUP3j7v4wqHcosnHheqGBnsrVf?cluster=devnet",
+      "status": "success",
+      "slot": 526380489,
+      "confirmationStatus": "finalized"
+    },
+    {
+      "operation": "Open Position",
+      "signature": "4Jguje8wPkS2aLCQv4ogMZUCGFk8thYUCFYprMFrLw2jinJPrQboFX1R1ogLZcQYJu7zctNLfBqfxRtNa5q33zAJ",
+      "explorer": "https://explorer.solana.com/tx/4Jguje8wPkS2aLCQv4ogMZUCGFk8thYUCFYprMFrLw2jinJPrQboFX1R1ogLZcQYJu7zctNLfBqfxRtNa5q33zAJ?cluster=devnet",
+      "status": "success",
+      "slot": 526386287,
+      "confirmationStatus": "finalized"
+    },
+    {
+      "operation": "Collect Fees",
+      "signature": "2bTBcCG4uiMEkzgtu4wFfwWx46SbMfaPnzVa9fXNPdWzgpCB7RWkyGPnTTts4u8V86u7soLgAFqPERV748aBFQr2",
+      "explorer": "https://explorer.solana.com/tx/2bTBcCG4uiMEkzgtu4wFfwWx46SbMfaPnzVa9fXNPdWzgpCB7RWkyGPnTTts4u8V86u7soLgAFqPERV748aBFQr2?cluster=devnet",
+      "status": "success",
+      "slot": 526393244,
+      "confirmationStatus": "finalized"
+    },
+    {
+      "operation": "Close Position",
+      "signature": "26L9VwLM7Hfo9aeYGHerTg7ZG6P9vHc1CZzR8i9oHX6A3MNshssWTXP26S6yeaDR7jVuP9LYMRv8e8XoyPun65Dg",
+      "explorer": "https://explorer.solana.com/tx/26L9VwLM7Hfo9aeYGHerTg7ZG6P9vHc1CZzR8i9oHX6A3MNshssWTXP26S6yeaDR7jVuP9LYMRv8e8XoyPun65Dg?cluster=devnet",
+      "status": "success",
+      "slot": 526397252,
+      "confirmationStatus": "finalized"
+    },
+    {
+      "operation": "Reverse Swap All",
+      "signature": "2inWmgkCwwgPp18gfMyuSAoAktzajMsKx8rsRmYFs8GpFGBPrLqUSD9bBQU8nXKj2pL35wWZFTQ4fFrauhXgceF1",
+      "explorer": "https://explorer.solana.com/tx/2inWmgkCwwgPp18gfMyuSAoAktzajMsKx8rsRmYFs8GpFGBPrLqUSD9bBQU8nXKj2pL35wWZFTQ4fFrauhXgceF1?cluster=devnet",
+      "status": "success",
+      "slot": 526398211,
+      "confirmationStatus": "finalized"
+    },
+    {
+      "operation": "Sync Vault",
+      "signature": "wYWppMfYVxqiJ6uA9UFN7TQBpRaD4L7CND9PEVCeR3fYHDmktrygFR3hDai1dUW1Jv7Tt5gLaKsXmQK41DNeSQo",
+      "explorer": "https://explorer.solana.com/tx/wYWppMfYVxqiJ6uA9UFN7TQBpRaD4L7CND9PEVCeR3fYHDmktrygFR3hDai1dUW1Jv7Tt5gLaKsXmQK41DNeSQo?cluster=devnet",
+      "status": "success",
+      "slot": 526398480,
+      "confirmationStatus": "finalized"
+    },
+    {
+      "operation": "Admin Deposit After Sync",
+      "signature": "4xyFwy6acPixAizfUKmbFtSw8hv6QbaUZNS8eM9tyVsFYcCEWrkr2SYoRadAqwRGMuK9LjJ7UoDNbTVs6Ua3MNzF",
+      "explorer": "https://explorer.solana.com/tx/4xyFwy6acPixAizfUKmbFtSw8hv6QbaUZNS8eM9tyVsFYcCEWrkr2SYoRadAqwRGMuK9LjJ7UoDNbTVs6Ua3MNzF?cluster=devnet",
+      "status": "success",
+      "slot": 526398933,
+      "confirmationStatus": "finalized"
+    },
+    {
+      "operation": "User Deposit After Sync",
+      "signature": "uc9ssZeRFGwA4LNAJ56pkNu5E9BVjGPpxcmcPQ6iT4GeUvyMsxzVqNeVwZWeYU1Zwn8W1Ke7CetkJYrbAD2ELGT",
+      "explorer": "https://explorer.solana.com/tx/uc9ssZeRFGwA4LNAJ56pkNu5E9BVjGPpxcmcPQ6iT4GeUvyMsxzVqNeVwZWeYU1Zwn8W1Ke7CetkJYrbAD2ELGT?cluster=devnet",
+      "status": "success"
+    },
+    {
+      "operation": "User Withdraw After Sync",
+      "signature": "59LmFzJWjzZPBxMRTcx7BGTJY2ujiz4oS7aF19Bg9a9Yw51gV6x79yqGvaZ4rN3bx5jp2XAZC4DJjwDWMcMATkEm",
+      "explorer": "https://explorer.solana.com/tx/59LmFzJWjzZPBxMRTcx7BGTJY2ujiz4oS7aF19Bg9a9Yw51gV6x79yqGvaZ4rN3bx5jp2XAZC4DJjwDWMcMATkEm?cluster=devnet",
+      "status": "success",
+      "slot": 526400070,
+      "confirmationStatus": "finalized"
+    }
+  ],
+  "strategyResults": {
+    "tokenABeforeStrategy": "103.907324",
+    "tokenAAfterStrategy": "103.858025",
+    "collectedFeeA": "0.000326",
+    "collectedFeeB": "0.000326",
+    "netTokenAChange": "-0.049299",
+    "positionNft": "C7sXWUp3XWLVMGVh7VnFZP3kEmQHPN2PBrmRSRZqUqGA",
+    "tickLower": -1080,
+    "tickUpper": 960
+  },
+  "finalVaultState": {
+    "vault": "8BhjDWjuCJ1XbMKssyjx59B53rufTZh99PQpHziDhZjG",
+    "tokenDecimals": 6,
+    "tokenABalance": "104859496",
+    "tokenBBalance": "0",
+    "totalTokens": "104859496",
+    "totalShares": "105013916",
+    "inMarket": false,
+    "needsSync": false,
+    "paused": false,
+    "positionClosed": true
+  },
+  "finalUserState": {
+    "wallet": "CMUX46cLec7QUXgA62mTJrPiS8dM1LugTvy4TDX22h5J",
+    "tokenABalance": "94993546",
+    "tokenBBalance": "100000000",
+    "shareBalance": "5011447"
+  }
+}
